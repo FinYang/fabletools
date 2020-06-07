@@ -48,7 +48,7 @@ reconcile.mdl_df <- function(.data, ...){
 #' 
 #' @export
 min_trace <- function(models, method = c("wls_var", "ols", "wls_struct", "mint_cov", "mint_shrink"),
-                 sparse = NULL){
+                      sparse = NULL){
   if(is.null(sparse)){
     sparse <- requireNamespace("SparseM", quietly = TRUE)
   }
@@ -72,8 +72,13 @@ forecast.lst_mint_mdl <- function(object, key_data, ...){
   fc_var <- transpose_dbl(map(fc_dist, distributional::variance))
   
   # Construct S matrix - ??GA: have moved this here as I need it for Structural scaling
-  S <- build_smat_rows(key_data)
-
+  
+  if(any(names(list(...)) == "LCS")){
+    S <- list(...)$LCS
+  } else {
+    S <- build_smat_rows(key_data)
+  }
+  
   # Compute weights (sample covariance)
   res <- map(object, function(x, ...) residuals(x, ...)[[2]], type = "response")
   res <- matrix(invoke(c, res), ncol = length(object))
@@ -237,7 +242,7 @@ build_smat <- function(key_data){
     smat <- map2(smat, colnames(x), function(S, cn) `colnames<-`(S, paste(cn, colnames(S))))
     invoke(cbind, smat)
   }
-
+  
   reduce(smat, join_smat)[,lvls,drop = FALSE]
 }
 
