@@ -24,8 +24,10 @@ forecast <- function(object, ...){
 #' @param new_data A `tsibble` containing future information used to forecast.
 #' @param h The forecast horison (can be used instead of `new_data` for regular
 #' time series with no exogenous regressors).
-#' @param point_forecast Which point forecast measure should be returned in the 
-#' resulting fable (possible values include: "mean", "median").
+#' @param point_forecast The point forecast measure(s) which should be returned 
+#' in the resulting fable. Specified as a named list of functions which accept
+#' a distribution and return a vector. To compute forecast medians, you can use
+#' `list(.median = median)`.
 #' @param bias_adjust Deprecated. Please use `point_forecast` to specify the 
 #' desired point forecast method.
 #' @param ... Additional arguments for forecast model methods.
@@ -93,7 +95,7 @@ forecast <- function(object, ...){
 forecast.mdl_df <- function(object, new_data = NULL, h = NULL, 
                             point_forecast = list(.mean = mean), ...){
   kv <- c(key_vars(object), ".model")
-  mdls <- object%@%"model"
+  mdls <- mable_vars(object)
   if(!is.null(h) && !is.null(new_data)){
     warn("Input forecast horizon `h` will be ignored as `new_data` has been provided.")
     h <- NULL
@@ -108,14 +110,14 @@ forecast.mdl_df <- function(object, new_data = NULL, h = NULL,
                              h = h, point_forecast = point_forecast, ...,
                              key_data = key_data(object))
   
-  object <- tidyr::pivot_longer(object, mdls, names_to = ".model", values_to = ".fc") 
+  object <- tidyr::pivot_longer(object, !!mdls, names_to = ".model", values_to = ".fc") 
   
   # Combine and re-construct fable
   fbl_attr <- attributes(object$.fc[[1]])
   out <- suppressWarnings(
     unnest_tsbl(as_tibble(object)[c(kv, ".fc")], ".fc", parent_key = kv)
   )
-  as_fable(out, resp = fbl_attr$response, dist = fbl_attr$dist)
+  build_fable(out, response = fbl_attr$response, distribution = fbl_attr$dist)
 }
 
 #' @export
@@ -125,6 +127,7 @@ forecast.lst_mdl <- function(object, new_data = NULL, key_data, ...){
        forecast, ...)
 }
 
+#' @rdname forecast
 #' @export
 forecast.mdl_ts <- function(object, new_data = NULL, h = NULL, bias_adjust = NULL,
                             point_forecast = list(.mean = mean), ...){
@@ -134,13 +137,23 @@ forecast.mdl_ts <- function(object, new_data = NULL, h = NULL, bias_adjust = NUL
   }
   if(!is.null(bias_adjust)){
     warn("The `bias_adjust` argument for forecast() has been deprecated. Please specify the desired point forecasts using `point_forecast`.\nBias adjusted forecasts are forecast means (`point_forecast = 'mean'`), non-adjusted forecasts are medians (`point_forecast = 'median'`)")
-    point_forecast <- if(bias_adjust) list(.mean = mean) else list(.median = median)
+    point_forecast <- if(bias_adjust) list(.mean = mean) else list(.median = stats::median)
   }
   if(is.null(new_data)){
     new_data <- make_future_data(object$data, h)
   }
+  
+  # Useful variables
+  idx <- index_var(new_data)
+  mv <- measured_vars(new_data)
+  resp_vars <- map_chr(object$response, expr_name)
+  dist_col <- if(length(resp_vars) > 1) ".distribution" else resp_vars
+  
+  # If there's nothing to forecast, return an empty fable.
   if(NROW(new_data) == 0){
-    abort("There are no forecasts to be made. Check that your forecast horizon includes at least one future value.")
+    new_data[[dist_col]] <- distributional::new_dist(dimnames = resp_vars)
+    fbl <- build_fable(new_data, response = resp_vars, distribution =  !!sym(dist_col))
+    return(fbl)
   }
   
   # Compute specials with new_data
@@ -160,6 +173,7 @@ Does your model require extra variables to produce forecasts?", e$message))
 
   # Compute forecasts
   fc <- forecast(object$fit, new_data, specials = specials, ...)
+  dimnames(fc) <- vapply(object$response, expr_name, character(1L), USE.NAMES = FALSE)
   
   # Back-transform forecast distributions
   bt <- map(object$transformation, function(x){
@@ -189,18 +203,12 @@ These required variables can be provided by specifying `new_data`.",
     }
   }
   
-  # Create output object
-  idx <- index_var(new_data)
-  mv <- measured_vars(new_data)
-  resp_vars <- map_chr(object$response, expr_name)
-  
-  dist_col <- if(length(resp_vars) > 1) ".distribution" else resp_vars
-  pred_col <- NULL
-  
   new_data[[dist_col]] <- fc
   
-  if(length(resp_vars) > 1) calc <- function(f, ....) set_names(f(...), resp_vars)
-  point_fc <- flatten_with_names(map(point_forecast, calc, fc))
+  pred_col <- NULL
+  point_fc <- map(point_forecast, calc, fc)
+  if(length(resp_vars) > 1) point_fc <- map(point_fc, set_names, resp_vars)
+  point_fc <- flatten_with_names(point_fc)
   new_data[names(point_fc)] <- point_fc
   
   cn <- c(dist_col, names(point_fc))
@@ -212,10 +220,7 @@ These required variables can be provided by specifying `new_data`.",
     interval = interval(new_data)
   )
   
-  as_fable(fbl,
-           resp = map_chr(object$response, expr_name),
-           dist = !!sym(dist_col)
-  )
+  build_fable(fbl, response = resp_vars, distribution =  !!sym(dist_col))
 }
 
 #' Construct a new set of forecasts

@@ -1,13 +1,38 @@
-# fabletools (development version)
+# fabletools 0.2.0
 
 ## Improvements
 
-* Improved support for streaming data to models with transformed response variables
+* Distributions are now provided by the distributional package, which is more
+  space efficient and allows calculation of distributional statistics including
+  the `mean()`, `median()`, `variance()`, `quantile()`, `cdf()` and `density()`.
+* `autoplot.fbl_ts()` and `autolayer.fbl_ts()` now accept the `point_forecast`
+  argument, which is a named list of functions that describe the method used to
+  obtain the point forecasts. If multiple are specified, each method will be
+  identified using the `linetype`.
+* Improved dplyr support. You can now use `bind_*()` and `*_join()` operations
+  on mables, dables, and fables. More verbs are supported by these extension
+  data classes, and so behaviour should work closer to what is expected.
+* Progress reporting is now handled by the progressr package. This allows you to
+  decide if, when, and how progress is reported. To show progress, wrap your 
+  code in the `progressr::with_progress()` function. Progress will no longer be
+  displayed automatically during lengthy calculations.
+* Added accuracy measures: `RMSSE()`, `pinball_loss()`, `scaled_pinball_loss()`.
+* Added accessor functions for column names (or metadata) of interest. This 
+  includes models in a mable (`mable_vars()`), response variables 
+  (`response_vars()`) and distribution variables (`distribution_var()`).
+* Improved support for streaming data to models with transformed response
+  variables.
 * `hilo.fbl_ts()` now keeps existing columns of a fable.
-* Documentation improvements
+* `forecast()` will now return an empty fable instead of erroring when no
+  forecasts are requested.
+* Documentation improvements.
 
 ## Breaking changes
 
+* The fable returned by `forecast()` now stores the distribution in the column
+  named the response variable (previously, this was the point forecast). Point
+  forecasts are now stored in the `.mean` column, which can be customised using
+  the `point_forecast` argument.
 * The `bias_adjust` option for forecast() is replaced by `point_forecast`,
   allowing you to specify which point forecast measures to display (fable/#226).
   This has been done to reduce confusion around the argument's usage, 
@@ -16,11 +41,26 @@
 * The data coercion functions `as_mable`, `as_dable`, and `as_fable` have been
   changed to accept character vectors for specifying common attributes (such as
   response variables, and distributions).
+* The `models` argument for `mable` and `as_mable` has been replaced with `model`
+  for consistency with the lack of plural in `key`.
+* Intervals from multivariate distributions are now returned as data frames of 
+  `hilo` intervals. The columns are the response variables. Similar structures 
+  are returned when computing other distributional statistics like the `mean`.
+* `rbind()` methods are deprecated in favour of `bind_rows()`
+* The row order of wide to long mable operations (such as `accuracy()`) has 
+  changed (due to shift to `pivot_longer()` from `gather()`). Model column name
+  values are now nested within key values, rather than key values nested in
+  model name values.
 
 ## Bug fixes
 
-* Fixed `show_gap` option not working when more than one forecast is plotted
-* `aggregate_key()` no longer drops key variables, instead they are kept as <aggregated>
+* Fixed `show_gap` option not working when more than one forecast is plotted.
+* Fixed `autolayer()` plotting issues due to inherited aesthetics.
+* `aggregate_key()` no longer drops keys, instead they are kept as <aggregated>.
+* Forecast reconciliation now works with historical data that is not temporally
+  aligned.
+* Fixed `forecast()` producing forecasts via `h` when `new_data` does not 
+  include a given series (#202).
 
 # fabletools 0.1.3
 

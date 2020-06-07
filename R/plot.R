@@ -53,7 +53,7 @@ autoplot.tbl_ts <- function(object, .vars = NULL, ...){
   aes_spec <- list(x = index(object), y = y)
   
   if(nk > 1){
-    object <- dplyr::mutate_if(object, ~inherits(., "agg_key"), compose(trimws, format))
+    object <- dplyr::mutate_if(object, ~inherits(., "agg_vec"), compose(trimws, format))
     aes_spec["colour"] <- list(expr(interaction(!!!syms(kv), sep = "/")))
   }
   
@@ -159,7 +159,7 @@ fortify.fbl_ts <- function(object, level = c(80, 95)){
     kv <- c(kv, ".response")
   }
   
-  as_tsibble(object, key = kv, index = !!idx, validate = FALSE) 
+  as_tsibble(object, key = !!kv, index = !!idx, validate = FALSE) 
 }
 
 #' Plot a set of forecasts
@@ -172,8 +172,9 @@ fortify.fbl_ts <- function(object, level = c(80, 95)){
 #' @param object A fable.
 #' @param data A tsibble with the same key structure as the fable.
 #' @param level The confidence level(s) for the plotted intervals.
-#' @param show_gap Setting this to `FALSE` will connect the historical observations with the forecasts.
+#' @param show_gap Setting this to `FALSE` will connect the most recent value in `data` with the forecasts.
 #' @param ... Further arguments passed used to specify fixed aesthetics for the forecasts such as `colour = "red"` or `size = 3`.
+#' @param point_forecast The point forecast measure to be displayed in the plot.
 #' 
 #' @examples 
 #' library(tsibbledata)
@@ -202,6 +203,7 @@ autoplot.fbl_ts <- function(object, data = NULL, level = c(80, 95), show_gap = T
     sym(fc_resp)
   }
 
+  # Structure input data to match fable
   if (!is.null(data)){
     data <- as_tsibble(data)
     if(!identical(fc_key, key_vars(data))){
@@ -217,36 +219,32 @@ autoplot.fbl_ts <- function(object, data = NULL, level = c(80, 95), show_gap = T
     }
     
     data <- data %>% 
-      dplyr::mutate_if(~inherits(., "agg_key"), compose(trimws, format))
+      dplyr::mutate_if(~inherits(., "agg_vec"), compose(trimws, format))
   }
 
-  # Change colours to be more appropriate for later facets
-  fc_layer <- autolayer(object, data = data, level = level, 
-                        show_gap = show_gap, ...)
-  if(sum(!common_models) > 1){
-    fc_layer[[1]]$mapping$colour <- set_expr(fc_layer$mapping$colour, sym(".model"))
-  }
-  else{
-    fc_layer[[1]]$mapping$colour <- NULL
-  }
+  # Compute facets, if any
+  facet_vars <- if(length(fc_resp) > 1) ".response" else NULL
+  if(any(common_models)) facet_vars <- c(facet_vars, fc_key)
   
+  # Change colours to be more appropriate for later facets
+  fc_layer <- build_fbl_layer(object, data = data, level = level, 
+                              show_gap = show_gap, facet_vars = facet_vars, ...)
+  
+  # Add forecasts on base plot
   p <- ggplot(data, aes(x = !!index(object))) + 
     fc_layer
     
+  # Add historical data
   if(!is.null(data)){
     p <- p + geom_line(aes(y = !!aes_y))
   }
   
-  if(length(fc_resp) > 1){
-    p <- p + 
-      facet_wrap(vars(!!!syms(c(".response", fc_key))),
-                 ncol = length(fc_resp), scales = "free_y") +
-      ggplot2::ylab(NULL)
-  } else if(any(common_models)){
-    p <- p + facet_wrap(vars(!!!syms(fc_key)),
-                        ncol = 1, scales = "free_y")
+  # Add facets
+  if(!is_empty(facet_vars)){
+    p <- p + facet_wrap(vars(!!!syms(facet_vars)), ncol = length(fc_resp),
+                        scales = "free_y")
   }
-  
+  if(length(fc_resp) > 1) p <- p + ggplot2::ylab(NULL)
   p
 }
 
@@ -262,14 +260,25 @@ autoplot.fbl_ts <- function(object, data = NULL, level = c(80, 95), show_gap = T
 #' @importFrom distributional scale_level_continuous guide_level
 #' @export
 autolayer.fbl_ts <- function(object, data = NULL, level = c(80, 95), 
-                             colour = "blue", color = colour, fill = color,
-                             point_forecast = lst(mean), show_gap = TRUE, ...){
-  fc_key <- setdiff(key_vars(object), ".model")
+                             point_forecast = list(mean = mean), show_gap = TRUE, ...){
+  build_fbl_layer(object = object, data = data, level = level, 
+                  point_forecast = point_forecast, show_gap = show_gap, ...)
+
+}
+
+build_fbl_layer <- function(object, data = NULL, level = c(80, 95), 
+                            colour = NULL, color = NULL, fill = NULL,
+                            point_forecast = list(mean = mean), show_gap = TRUE, 
+                            ..., facet_vars = NULL){
+  mdl_key <- object%@%"model_cn"
+  fc_key <- setdiff(key_vars(object), mdl_key)
   key_data <- key_data(object)
+  key_vars <- key_vars(object)
   resp_var <- response_vars(object)
   dist_var <- distribution_var(object)
   idx <- index(object)
-  common_models <- duplicated(key_data[[".model"]] %||% rep(TRUE, NROW(key_data(object))))
+  common_models <- duplicated(key_data[[mdl_key]] %||% rep(TRUE, NROW(key_data(object))))
+  colour <- colour %||% color %||% fill %||% "blue"
   
   if(isFALSE(level)){
     warn("Plot argument `level` should be a numeric vector of levels to display. Setting `level = NULL` will remove the intervals from the plot.")
@@ -280,7 +289,7 @@ autolayer.fbl_ts <- function(object, data = NULL, level = c(80, 95),
     warn("Could not connect forecasts to last observation as `data` was not provided. Setting `show_gap = FALSE`.")
   }
   if(!show_gap){
-    gap <- key_data(object)
+    gap <- key_data
     gap[ncol(gap)] <- NULL
     last_obs <- filter(group_by_key(data), !!idx == max(!!idx))
     if (length(key_vars(last_obs)) == 0) {
@@ -290,11 +299,11 @@ autolayer.fbl_ts <- function(object, data = NULL, level = c(80, 95),
       gap <- left_join(gap, last_obs, by = key_vars(last_obs))
     }
     if (length(resp_var) > 1) abort("`show_gap = FALSE` is not yet supported for multivariate forecasts.")
-    gap[[as_string(object%@%"dist")]] <- dist_normal(gap[[resp_var]], 0)
+    gap[[distribution_var(object)]] <- gap[[resp_var]]
     gap <- as_fable(gap, index = !!idx, key = key_vars(object),
                     response = resp_var,
                     distribution = distribution_var(object))
-    object <- rbind(gap, object)
+    object <- bind_rows(gap, object)
   }
   
   if(length(resp_var) > 1){
@@ -309,14 +318,18 @@ autolayer.fbl_ts <- function(object, data = NULL, level = c(80, 95),
   mapping <- aes(
     x = !!idx,
   )
-  if(NROW(key_data) > 1){
-    useful_keys <- fc_key[map_lgl(key_data[fc_key], function(x) sum(!duplicated(x)) > 1)]
-    col <- c(
-      if(any(common_models)) syms(useful_keys) else NULL,
-      if(sum(!common_models) > 1) syms(".model") else NULL
-    )
-    
-    mapping$colour <- if(length(col)==1) col[[1]] else expr(interaction(!!!col, sep = "/"))
+  
+  useful_keys <- fc_key[map_lgl(key_data[fc_key], function(x) sum(!duplicated(x)) > 1)]
+  col <- c(
+    if(any(common_models)) useful_keys else NULL,
+    if(sum(!common_models) > 1) ".model" else NULL
+  )
+  col <- setdiff(col, facet_vars)
+  if(!is_empty(col)){
+    col_nm <- paste0(col, collapse = "/")
+    col <- if(length(col)==1) sym(col) else expr(interaction(!!!syms(col), sep = "/"))
+  } else {
+    col <- NULL
   }
   
   grp <- c(grp, syms(key_vars(object)))
@@ -324,20 +337,43 @@ autolayer.fbl_ts <- function(object, data = NULL, level = c(80, 95),
     mapping$group <- expr(interaction(!!!map(grp, function(x) expr(format(!!x))), sep = "/"))
   }
   
+  single_row <- filter(key_data(object), lengths(!!sym(".rows")) == 1)
+  
   out <- list()
   object <- object %>% 
-    dplyr::mutate_if(~inherits(., "agg_key"), compose(trimws, format))
+    dplyr::mutate_if(~inherits(., "agg_vec"), compose(trimws, format))
   if(!is.null(level)){
-    interval_data <- hilo(object, level = level) %>% 
-      tidyr::pivot_longer(paste0(level, "%"), names_to = "..unused", values_to = "hilo")
+    interval_data <- as_tibble(hilo(object, level = level)) %>% 
+      tidyr::pivot_longer(paste0(level, "%"), names_to = NULL, values_to = "hilo")
+    if(length(resp_var) > 1){
+      interval_data <- interval_data %>% 
+        tidyr::unpack("hilo") %>% 
+        tidyr::pivot_longer(names(interval_data$hilo), names_to = ".response", values_to = "hilo")
+    }
     intvl_mapping <- mapping
     intvl_mapping$hilo <- sym("hilo")
-    out[[1]] <- distributional::geom_hilo_ribbon(intvl_mapping, data = interval_data, fill = fill, ..., inherit.aes = FALSE)
+    
+    if(!is.null(col)){
+      intvl_mapping$fill <- col
+      out[[1]] <- distributional::geom_hilo_ribbon(intvl_mapping, data = dplyr::anti_join(interval_data, single_row, by = key_vars), ..., inherit.aes = FALSE)
+      intvl_mapping$colour <- col
+      intvl_mapping$fill <- NULL
+      out[[2]] <- distributional::geom_hilo_linerange(intvl_mapping, data = dplyr::semi_join(interval_data, single_row, by = key_vars), ..., inherit.aes = FALSE)
+      out[[3]] <- ggplot2::labs(fill = col_nm)
+    } else {
+      out[[1]] <- distributional::geom_hilo_ribbon(intvl_mapping, data = dplyr::anti_join(interval_data, single_row, by = key_vars), fill = colour, ..., inherit.aes = FALSE)
+      out[[2]] <- distributional::geom_hilo_linerange(intvl_mapping, data = dplyr::semi_join(interval_data, single_row, by = key_vars), colour = colour, ..., inherit.aes = FALSE)
+    }
   }
   
   object <- as_tibble(object)
   object[names(point_forecast)] <- map(point_forecast, calc, object[[dist_var]])
   object <- tidyr::pivot_longer(object[-match(dist_var, names(object))], names(point_forecast), names_to = "Point forecast", values_to = dist_var)
+  if(length(resp_var) > 1){
+    object <- object %>% 
+      tidyr::unpack(!!dist_var) %>% 
+      tidyr::pivot_longer(names(object[[dist_var]]), names_to = ".response", values_to = dist_var)
+  }
   
   mapping$y <- sym(dist_var)
   if(length(point_forecast) > 1){
@@ -345,7 +381,16 @@ autolayer.fbl_ts <- function(object, data = NULL, level = c(80, 95),
     grp <- c(grp, mapping$linetype)
     mapping$group <- expr(interaction(!!!map(grp, function(x) expr(format(!!x))), sep = "/"))
   }
-  out[[length(out) + 1]] <- geom_line(mapping = mapping, data = as_tibble(object), color = color, ..., inherit.aes = FALSE)
+  object <- as_tibble(object)
+  if(!is.null(col)){
+    mapping$colour <- col
+    out[[length(out) + 1]] <- geom_line(mapping = mapping, data = dplyr::anti_join(object, single_row, by = key_vars), ..., inherit.aes = FALSE, key_glyph = ggplot2::draw_key_timeseries)
+    out[[length(out) + 1]] <- ggplot2::geom_point(mapping = mapping, data = dplyr::semi_join(object, single_row, by = key_vars), ..., inherit.aes = FALSE, key_glyph = ggplot2::draw_key_blank)
+    out[[length(out) + 1]] <- ggplot2::labs(colour = col_nm)
+  } else {
+    out[[length(out) + 1]] <- geom_line(mapping = mapping, data = dplyr::anti_join(object, single_row, by = key_vars), color = colour, ..., inherit.aes = FALSE, key_glyph = ggplot2::draw_key_timeseries)
+    out[[length(out) + 1]] <- ggplot2::geom_point(mapping = mapping, data = dplyr::semi_join(object, single_row, by = key_vars), color = colour, ..., inherit.aes = FALSE, key_glyph = ggplot2::draw_key_blank)
+  }
   out
 }
 
@@ -380,7 +425,7 @@ autoplot.dcmp_ts <- function(object, .vars = NULL, scale_bars = TRUE, ...){
   
   .vars <- enquo(.vars)
   if(quo_is_null(.vars)){
-    .vars <- object%@%"response"
+    .vars <- sym(response_vars(object))
   }
   dcmp_str <- dcmp <- (object%@%"aliases")[[expr_name(get_expr(.vars))]]
   if(!is.null(dcmp_str)){
@@ -408,7 +453,7 @@ autoplot.dcmp_ts <- function(object, .vars = NULL, scale_bars = TRUE, ...){
   # Rangebars
   if (scale_bars) {
     xranges <- range(object[[expr_name(idx)]])
-    barwidth <- pmax(1, round((1 / 64) * diff(units_since(xranges))))
+    barwidth <- pmax(1, round((1 / 64) * diff(as.double(xranges))))
     
     # Avoid issues with visible bindings
     ymin <- ymax <- center <- diff <- NULL

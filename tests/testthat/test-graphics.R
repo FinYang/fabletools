@@ -194,8 +194,8 @@ test_that("autoplot.fbl_ts()", {
   expect_silent(print(p))
   
   expect_equal(
-    ggplot2::layer_data(p)$y,
-    mean(rep(fbl$value, 2))
+    ggplot2::layer_data(p, 3)$y,
+    mean(fbl$value)
   )
   
   p_built <- ggplot2::ggplot_build(p)
@@ -209,11 +209,11 @@ test_that("autoplot.fbl_ts()", {
   expect_silent(print(p))
 
   expect_equal(
-    ggplot2::layer_data(p, 1)$y,
-    mean(rep(fbl$value, 2))
+    ggplot2::layer_data(p, 3)$y,
+    mean(fbl$value)
   )
   expect_equal(
-    ggplot2::layer_data(p, 2)$y,
+    ggplot2::layer_data(p, 5)$y,
     us_deaths$value
   )
   
@@ -228,11 +228,11 @@ test_that("autoplot.fbl_ts()", {
   expect_silent(print(p))
   
   expect_equal(
-    ggplot2::layer_data(p)$y,
+    ggplot2::layer_data(p, 3)$y,
     mean(fbl_complex$value[c(1:24, 25:48)])
   )
   expect_equivalent(
-    as.numeric(table(ggplot2::layer_data(p)$colour)),
+    as.numeric(table(ggplot2::layer_data(p, 3)$colour)),
     rep(24, 2)
   )
   
@@ -243,13 +243,12 @@ test_that("autoplot.fbl_ts()", {
     list(x = "index", y = "value")
   )
   
-  skip("mv not supported")
   p <- autoplot(fbl_mv, lung_deaths_wide, level = 80)
   expect_silent(print(p))
   
   expect_equal(
-    ggplot2::layer_data(p)$y,
-    c(fbl_mv$fdeaths, fbl_mv$mdeaths)
+    ggplot2::layer_data(p, 3)$y,
+    c(fbl_mv$.mean_fdeaths, fbl_mv$.mean_mdeaths)
   )
   expect_equivalent(
     as.numeric(table(ggplot2::layer_data(p)$PANEL)),
@@ -271,8 +270,8 @@ test_that("autolayer.fbl_ts()", {
   expect_silent(print(p))
   
   expect_equal(
-    ggplot2::layer_data(p,2)$y,
-    mean(rep(fbl$value, 2))
+    ggplot2::layer_data(p,4)$y,
+    mean(fbl$value)
   )
   
   p_built <- ggplot2::ggplot_build(p)
@@ -286,11 +285,11 @@ test_that("autolayer.fbl_ts()", {
   expect_silent(print(p))
   
   expect_equal(
-    ggplot2::layer_data(p,2)$y,
-    mean(fbl_complex$value[c(1:24, 25:48)])
+    ggplot2::layer_data(p,4)$y,
+    mean(fbl_complex$value[c(1:12, 25:36, 13:24, 37:48)])
   )
   expect_equivalent(
-    as.numeric(table(ggplot2::layer_data(p,2)$colour)),
+    as.numeric(table(ggplot2::layer_data(p,4)$colour)),
     rep(12, 4)
   )
   
@@ -301,13 +300,12 @@ test_that("autolayer.fbl_ts()", {
     list(x = "index [1M]", y = "value")
   )
   
-  skip("mv not supported")
   p <- autoplot(lung_deaths_wide, vars(mdeaths, fdeaths)) + autolayer(fbl_mv, level = 80)
   expect_silent(print(p))
   
   expect_equal(
-    ggplot2::layer_data(p,2)$y,
-    c(fbl_mv$fdeaths, fbl_mv$mdeaths)
+    ggplot2::layer_data(p,4)$y,
+    c(fbl_mv$.mean_fdeaths, fbl_mv$.mean_mdeaths)
   )
   expect_equivalent(
     as.numeric(table(ggplot2::layer_data(p,2)$PANEL)),
