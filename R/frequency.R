@@ -71,7 +71,8 @@ get_frequencies.numeric <- function(period, ...){
 get_frequencies.NULL <- function(period, data, ...,
                                  .auto = c("smallest", "largest", "all")){
   .auto <- match.arg(.auto)
-  frequencies <- common_periods(data) %||% 1
+  frequencies <- Filter(function(x) x >= 1, common_periods(data))
+  if(is_empty(frequencies)) frequencies <- 1
   if(.auto == "smallest") {
     return(frequencies[which.min(frequencies)])
   }
@@ -87,7 +88,9 @@ get_frequencies.NULL <- function(period, data, ...,
 #' @export
 get_frequencies.character <- function(period, data, ...){
   require_package("lubridate")
-  get_frequencies(lubridate::as.period(period), data, ...)
+  m <- lubridate::as.period(period)
+  if(is.na(m)) abort(paste("Unknown period:", period))
+  get_frequencies(m, data, ...)
 }
 
 #' @rdname freq_tools

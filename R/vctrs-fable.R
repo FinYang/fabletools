@@ -86,6 +86,15 @@ vec_cast.fbl_ts.tbl_df <- function(x, to, ...) {
 }
 
 #' @export
+vec_cast.tbl_ts.fbl_ts <- function(x, to, ...) {
+  tbl <- tib_cast(x, to, ...)
+  build_tsibble(
+    tbl, key = key_vars(to), index = index_var(to), index2 = index2_var(to),
+    ordered = TRUE, validate = TRUE, .drop = key_drop_default(to)
+  )
+}
+
+#' @export
 vec_cast.fbl_ts.data.frame <- vec_cast.fbl_ts.tbl_df
 
 #' @export
@@ -96,4 +105,14 @@ vec_cast.tbl_df.fbl_ts <- function(x, to, ...) {
 #' @export
 vec_cast.data.frame.fbl_ts <- function(x, to, ...) {
   df_cast(x, to, ...)
+}
+
+#' @export
+vec_restore.fbl_ts <- function(x, to, ..., n = NULL) {
+  if(!is_tsibble(x)){
+    x <- build_tsibble(
+      x, key = key_vars(to), index = index_var(to), index2 = index2_var(to),
+      ordered = TRUE, validate = TRUE, .drop = key_drop_default(to))
+  }
+  build_fable(x, response = response_vars(to), distribution = distribution_var(to))
 }

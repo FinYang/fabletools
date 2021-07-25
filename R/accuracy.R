@@ -104,10 +104,68 @@ MAAPE <- function(.resid, .actual, na.rm = TRUE, ...){
 #' @param d Should the response model include a first difference?
 #' @param D Should the response model include a seasonal difference?
 #' @param na.action Function to handle missing values.
-#' 
+#'
 #' @export
 point_accuracy_measures <- list(ME = ME, RMSE = RMSE, MAE = MAE,
-                       MPE = MPE, MAPE = MAPE, MASE = MASE, ACF1 = ACF1)
+                       MPE = MPE, MAPE = MAPE, MASE = MASE, RMSSE = RMSSE,
+                       ACF1 = ACF1)
+
+#' @rdname directional_accuracy_measures
+#' 
+#' @param reward,penalty The weights given to correct and incorrect predicted
+#'   directions.
+#' 
+#' @export
+MDA <- function(.resid, .actual, na.rm = TRUE, reward = 1, penalty = 0, ...){
+  actual_change <- diff(.actual)
+  actual_direction <- sign(actual_change)
+  predicted_change <- actual_change - .resid[-1]
+  predicted_direction <- sign(predicted_change)
+  directional_error <- actual_direction == predicted_direction
+  
+  (reward-penalty) * mean(directional_error, na.rm = na.rm) + penalty
+}
+
+#' @rdname directional_accuracy_measures
+#' @export
+MDV <- function(.resid, .actual, na.rm = TRUE, ...){
+  actual_change <- diff(.actual)
+  actual_direction <- sign(actual_change)
+  predicted_change <- actual_change - .resid[-1]
+  predicted_direction <- sign(predicted_change)
+  directional_accuracy <- ifelse(actual_direction == predicted_direction, 1, -1)
+  mean(abs(actual_change) * directional_accuracy, na.rm = na.rm)
+}
+
+#' @rdname directional_accuracy_measures
+#' @export
+MDPV <- function(.resid, .actual, na.rm = TRUE, ...){
+  actual_change <- diff(.actual)
+  actual_direction <- sign(actual_change)
+  predicted_change <- actual_change - .resid[-1]
+  predicted_direction <- sign(predicted_change)
+  directional_accuracy <- ifelse(actual_direction == predicted_direction, 1, -1)
+  
+  mean(abs(actual_change / .actual[-1]) * directional_accuracy, na.rm = na.rm) * 100
+}
+
+#' Directional accuracy measures
+#' 
+#' A collection of accuracy measures based on the accuracy of the prediction's 
+#' direction (say, increasing or decreasing).
+#' 
+#' `MDA()`: Mean Directional Accuracy
+#' `MDV()`: Mean Directional Value
+#' `MDPV()`: Mean Directional Percentage Value
+#' 
+#' @inheritParams point_accuracy_measures
+#' 
+#' @references 
+#' Blaskowitz and H. Herwartz (2011) "On economic evaluation of directional forecasts". \emph{International Journal of Forecasting},
+#' \bold{27}(4), 1058-1065.
+#' 
+#' @export
+directional_accuracy_measures <- list(MDA = MDA, MDV = MDV, MDPV = MDPV)
 
 #' @rdname interval_accuracy_measures
 #' @export
@@ -130,11 +188,12 @@ winkler_score <- function(.dist, .actual, level = 95, na.rm = TRUE, ...){
 }
 
 #' @rdname interval_accuracy_measures
+#' @importFrom stats quantile
 #' @export
 pinball_loss <- function(.dist, .actual, level = 95, na.rm = TRUE, ...){
-  q <- quantile(.dist, level/100)
+  q <- stats::quantile(.dist, level/100)
   loss <- ifelse(.actual>=q, level/100 * (.actual-q), (1-level/100) * (q-.actual))
-  mean(loss, na.rm = na.rm)
+  2*mean(loss, na.rm = na.rm)
 }
 
 #' @rdname interval_accuracy_measures
@@ -153,7 +212,7 @@ scaled_pinball_loss <- function(.dist, .actual, .train, level = 95, na.rm = TRUE
   }
   scale <- mean(abs(.train), na.rm = na.rm)
   
-  q <- quantile(.dist, level/100)
+  q <- stats::quantile(.dist, level/100)
   loss <- ifelse(.actual>=q, level/100 * (.actual-q), (1-level/100) * (q-.actual))
   mean(loss/scale, na.rm = na.rm)
 }
@@ -170,20 +229,27 @@ interval_accuracy_measures <- list(winkler = winkler_score)
 #' @rdname distribution_accuracy_measures
 #' @export
 percentile_score <- function(.dist, .actual, na.rm = TRUE, ...){
-  probs <- seq(0.01, 0.99, 0.01)
+  quantile_score(.dist, .actual, probs = seq(0.01, 0.99, 0.01), na.rm = TRUE, ...)
+}
+
+#' @rdname distribution_accuracy_measures
+#' @param probs A vector of probabilities at which the metric is evaluated.
+#' @export
+quantile_score <- function(.dist, .actual, probs = c(0.05,0.25,0.5,0.75,0.95),
+                           na.rm = TRUE, ...){
   percentiles <- map(probs, quantile, x = .dist)
-  if(!is.numeric(percentiles[[1]])) abort("Percentile scores are not supported for multivariate distributions.")
-  map2_dbl(percentiles, probs, function(percentile, prob){
+  if(!is.numeric(percentiles[[1]])) abort("Quantile scores are not supported for multivariate distributions.")
+  2*mean(map2_dbl(percentiles, probs, function(percentile, prob){
     L <- ifelse(.actual < percentile, (1-prob), prob)*abs(percentile-.actual)
     mean(L, na.rm = na.rm)
-  }) %>% 
-    mean(na.rm = na.rm)
+  }), na.rm = na.rm)
 }
 
 #' @rdname distribution_accuracy_measures
 #' @export
 CRPS <- function(.dist, .actual, n_quantiles = 1000, na.rm = TRUE, ...){
   is_normal <- map_lgl(.dist, inherits, "dist_normal")
+  is_sample <- map_lgl(.dist, inherits, "dist_sample")
   z <- rep(NA_real_, length(.dist))
   
   if(any(is_normal)){
@@ -193,17 +259,26 @@ CRPS <- function(.dist, .actual, n_quantiles = 1000, na.rm = TRUE, ...){
     zn <- sd*(zn*(2*stats::pnorm(zn)-1)+2*stats::dnorm(zn)-1/sqrt(pi))
     z[is_normal] <- zn
   }
-  
-  if(any(!is_normal)){
+  if(any(is_sample)){
+    z[is_sample] <- map2_dbl(
+      .dist[is_sample], .actual[is_sample], 
+      function(d, y){
+        x <- sort(d$x)
+        m <- length(x)
+        (2/m) * mean((x-y)*(m*(y<x) - seq_len(m) + 0.5))
+      }
+    )
+  }
+  is_default <- is.na(z)
+  if(any(is_default)){
     probs <- seq(0, 1, length.out = n_quantiles + 2)[seq_len(n_quantiles) + 1]
-    percentiles <- map(probs, quantile, x = .dist[!is_normal])
+    percentiles <- map(probs, quantile, x = .dist[is_default])
     if(!is.numeric(percentiles[[1]])) abort("Percentile scores are not supported for multivariate distributions.")
-    za <- map2_dbl(percentiles, probs, function(percentile, prob){
-      L <- ifelse(.actual[!is_normal] < percentile, (1-prob), prob)*abs(percentile-.actual[!is_normal])
-      mean(L, na.rm = na.rm)
-    })
+    za <- transpose_dbl(map2(percentiles, probs, function(percentile, prob){
+      ifelse(.actual[is_default] < percentile, (1-prob), prob)*abs(percentile-.actual[is_default])
+    }))
     
-    z[!is_normal] <- za*2
+    z[is_default] <- vapply(za, mean, numeric(1L), na.rm = na.rm)*2
   }
   
   mean(z, na.rm = na.rm)
@@ -211,11 +286,123 @@ CRPS <- function(.dist, .actual, n_quantiles = 1000, na.rm = TRUE, ...){
 
 #' Distribution accuracy measures
 #' 
+#' These accuracy measures can be used to evaluate how accurately a forecast 
+#' distribution predicts a given actual value.
+#' 
+#' @section Quantile/percentile score (pinball loss):
+#' 
+#' A quantile (or percentile) score evaluates how accurately a set of quantiles
+#' (or percentiles) from the distribution match the given actual value. This 
+#' score uses a pinball loss function, and can be calculated via the average of
+#' the score function given below:
+#' 
+#' The score function \eqn{s_p(q_p,y)} is given by \eqn{(1-p)(q_p-y)} if 
+#' \eqn{y < q_p}, and \eqn{p(y-q_p)} if \eqn{y \ge q_p}. Where \eqn{p} is the 
+#' quantile probability, \eqn{q_p = F^{-1}(p)} is the quantile with probability 
+#' \eqn{p}, and \eqn{y} is the actual value.
+#' 
+#' The resulting accuracy measure will average this score over all predicted
+#' points at all desired quantiles (defined via the `probs` argument).
+#' 
+#' The percentile score is uses the same method with `probs` set to all 
+#' percentiles `probs = seq(0.01, 0.99, 0.01)`.
+#' 
+#' @section Continuous ranked probability score (CRPS):
+#' 
+#' The continuous ranked probability score (CRPS) is the continuous analogue of
+#' the pinball loss quantile score defined above. Its value is twice the 
+#' integral of the quantile score over all possible quantiles:
+#' 
+#' \deqn{
+#'  \text{CRPS}(F,y) = 2 \int_0^1 s_p(q_p,y) dp
+#' }{
+#'   CRPS(F,y) = 2 integral_0^1 s_p(q_p,y) dp
+#' }
+#' 
+#' It can be computed directly from the distribution via:
+#' 
+#' \deqn{
+#'   \text{CRPS}(F,y) = \int_{-\infty}^\infty (F(x) - 1{y\leq x})^2 dx
+#' }{
+#'   CRPS(F,y) = integral_{-\infty}^\infty (F(x) - 1{y\leq x})^2 dx
+#' }
+#' 
+#' For some forecast distribution \eqn{F} and actual value \eqn{y}.
+#' 
+#' Calculating the CRPS accuracy measure is computationally difficult for many
+#' distributions, however it can be computed quickly and exactly for Normal and
+#' emperical (sample) distributions. For other distributions the CRPS is 
+#' approximated using the quantile score of many quantiles (using the number of 
+#' quantiles specified in the `n_quantiles` argument).
+#' 
 #' @inheritParams interval_accuracy_measures
 #' @param n_quantiles The number of quantiles to use in approximating CRPS when an exact solution is not available.
 #' 
 #' @export
 distribution_accuracy_measures <- list(percentile = percentile_score, CRPS = CRPS)
+
+
+#' Forecast skill score measure
+#' 
+#' This function converts other error metrics such as `MSE` into a skill score.
+#' The reference or benchmark forecasting method is the Naive method for
+#' non-seasonal data, and the seasonal naive method for seasonal data.
+#' When used within \code{\link{accuracy.fbl_ts}}, it is important that the data
+#' contains both the training and test data, as the training data is used to
+#' compute the benchmark forecasts.
+#'
+#' @param measure The accuracy measure to use in computing the skill score.
+#' 
+#' @examples 
+#' 
+#' skill_score(MSE)
+#' 
+#' if (requireNamespace("fable", quietly = TRUE)) {
+#' library(fable)
+#' library(tsibble)
+#' 
+#' lung_deaths <- as_tsibble(cbind(mdeaths, fdeaths))
+#' lung_deaths %>% 
+#'   dplyr::filter(index < yearmonth("1979 Jan")) %>%
+#'   model(
+#'     ets = ETS(value ~ error("M") + trend("A") + season("A")),
+#'     lm = TSLM(value ~ trend() + season())
+#'   ) %>%
+#'   forecast(h = "1 year") %>%
+#'   accuracy(lung_deaths, measures = list(skill = skill_score(MSE)))
+#' }
+#' 
+#' @export
+skill_score <- function(measure) {
+  function(...) {
+    # Compute accuracy measure for forecasts
+    score <- measure(...)
+    
+    # Compute arguments of benchmark method using .train
+    bench <- list(...)
+    lag <- bench$.period
+    n <- length(bench$.train)
+    y <- bench$.train
+    
+    ## Compute point forecast from benchmark
+    bench$.fc <- rep_len(
+      y[c(rep(NA, max(0, lag - n)), seq_len(min(n, lag)) + n - min(n, lag))],
+      length(bench$.fc)
+    )
+    bench$.resid <- bench$.actual - bench$.fc
+    
+    # Compute forecast distribution from benchmark
+    e <- y - c(rep(NA, min(lag, n)), y[seq_len(length(y) - lag)])
+    mse <- mean(e^2, na.rm = TRUE)
+    h <- length(bench$.actual)
+    fullperiods <- (h - 1) / lag + 1
+    steps <- rep(seq_len(fullperiods), rep(lag, fullperiods))[seq_len(h)]
+    bench$.dist <- distributional::dist_normal(bench$.fc, sqrt(mse * steps))
+    ref_score <- do.call(measure, bench)
+    
+    1 - score / ref_score
+  }
+}
 
 #' Evaluate accuracy of a forecast or model
 #' 
@@ -273,6 +460,10 @@ accuracy <- function(object, ...){
 #' 
 #' @export
 accuracy.mdl_df <- function(object, measures = point_accuracy_measures, ...){
+  if(is_tsibble(measures)){
+    abort("The `measures` argument must contain a list of accuracy measures.
+Hint: A tsibble of future values is only required when computing accuracy of a fable. To compute forecast accuracy, you'll need to compute the forecasts first.")
+  }
   as_tibble(object) %>% 
     tidyr::pivot_longer(mable_vars(object), names_to = ".model", values_to = "fit") %>% 
     mutate(fit = map(!!sym("fit"), accuracy, measures = measures, ...)) %>% 
@@ -284,7 +475,7 @@ accuracy.mdl_ts <- function(object, measures = point_accuracy_measures, ...){
   dots <- dots_list(...)
   resp <- if(length(object$response) > 1) sym("value") else object$response[[1]]
   
-  aug <- as_tibble(augment(object, type = "response"))
+  aug <- as_tibble(augment(object))
   
   # Compute inputs for each response variable
   if(length(object$response) > 1){
@@ -362,7 +553,7 @@ accuracy.fbl_ts <- function(object, data, measures = point_accuracy_measures, ..
   by <- union(index_var(object), by)
   
   
-  if(!(".model" %in% by)){
+  if(!(".model" %in% by) & ".model" %in% names(object)){
     warn('Accuracy measures should be computed separately for each model, have you forgotten to add ".model" to your `by` argument?')
   }
   

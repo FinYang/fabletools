@@ -7,16 +7,20 @@
 \usage{
 \method{augment}{mdl_df}(x, ...)
 
-\method{augment}{mdl_ts}(x, ...)
+\method{augment}{mdl_ts}(x, type = NULL, ...)
 }
 \arguments{
 \item{x}{A mable.}
 
 \item{...}{Arguments for model methods.}
+
+\item{type}{Deprecated.}
 }
 \description{
 Uses a fitted model to augment the response variable with fitted values and
-residuals.
+residuals. Response residuals (back-transformed) are stored in the \code{.resid}
+column, while innovation residuals (transformed) are stored in the \code{.innov}
+column.
 }
 \examples{
 if (requireNamespace("fable", quietly = TRUE)) {
@@ -26,7 +30,7 @@ library(tsibbledata)
 # Forecasting with an ETS(M,Ad,A) model to Australian beer production
 aus_production \%>\%
   model(ets = ETS(log(Beer) ~ error("M") + trend("Ad") + season("A"))) \%>\% 
-  augment(type = "response")
+  augment()
 }
 
 }

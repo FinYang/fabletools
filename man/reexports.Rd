@@ -14,6 +14,7 @@
 \alias{augment}
 \alias{glance}
 \alias{tidy}
+\alias{hypothesize}
 \alias{generate}
 \alias{refit}
 \alias{hilo}
@@ -27,12 +28,12 @@ below to see their documentation.
 \describe{
   \item{distributional}{\code{\link[distributional]{guide_level}}, \code{\link[distributional]{hilo}}}
 
-  \item{dplyr}{\code{\link[dplyr]{\%>\%}}, \code{\link[dplyr]{vars}}}
+  \item{dplyr}{\code{\link[dplyr:reexports]{\%>\%}}, \code{\link[dplyr]{vars}}}
 
-  \item{generics}{\code{\link[generics]{augment}}, \code{\link[generics]{components}}, \code{\link[generics]{equation}}, \code{\link[generics]{generate}}, \code{\link[generics]{glance}}, \code{\link[generics]{interpolate}}, \code{\link[generics]{refit}}, \code{\link[generics]{tidy}}}
+  \item{generics}{\code{\link[generics]{augment}}, \code{\link[generics]{components}}, \code{\link[generics]{equation}}, \code{\link[generics]{generate}}, \code{\link[generics]{glance}}, \code{\link[generics]{hypothesize}}, \code{\link[generics]{interpolate}}, \code{\link[generics]{refit}}, \code{\link[generics]{tidy}}}
 
   \item{ggplot2}{\code{\link[ggplot2]{autolayer}}, \code{\link[ggplot2]{autoplot}}}
 
-  \item{tsibble}{\code{\link[tsibble]{as_tsibble}}}
+  \item{tsibble}{\code{\link[tsibble:as-tsibble]{as_tsibble}}}
 }}
 

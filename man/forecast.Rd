@@ -21,6 +21,9 @@ forecast(object, ...)
   new_data = NULL,
   h = NULL,
   bias_adjust = NULL,
+  simulate = FALSE,
+  bootstrap = FALSE,
+  times = 5000,
   point_forecast = list(.mean = mean),
   ...
 )
@@ -42,16 +45,27 @@ a distribution and return a vector. To compute forecast medians, you can use
 
 \item{bias_adjust}{Deprecated. Please use \code{point_forecast} to specify the
 desired point forecast method.}
+
+\item{simulate}{Should forecasts be based on simulated future paths instead
+of analytical results.}
+
+\item{bootstrap}{Should innovations from simulated forecasts be bootstrapped
+from the model's fitted residuals. This allows the forecast distribution to
+have a different underlying shape which could better represent the nature
+of your data.}
+
+\item{times}{The number of future paths for simulations if \code{simulate = TRUE}.}
 }
 \value{
 A fable containing the following columns:
 \itemize{
 \item \code{.model}: The name of the model used to obtain the forecast. Taken from
 the column names of models in the provided mable.
-\item The point forecast, which by default is the mean. The name of this column
-will be the same as the dependent variable in the model(s).
-\item \code{.distribution}. A column of objects of class \code{fcdist}, representing the
-statistical distribution of the forecast in the given time period.
+\item The forecast distribution. The name of this column will be the same as the
+dependent variable in the model(s). If multiple dependent variables exist,
+it will be named \code{.distribution}.
+\item Point forecasts computed from the distribution using the functions in the
+\code{point_forecast} argument.
 \item All columns in \code{new_data}, excluding those whose names conflict with the
 above.
 }
@@ -69,7 +83,7 @@ The forecasts returned contain both point forecasts and their distribution.
 A specific forecast interval can be extracted from the distribution using the
 \code{\link[=hilo]{hilo()}} function, and multiple intervals can be obtained using \code{\link[=report]{report()}}.
 These intervals are stored in a single column using the \code{hilo} class, to
-extract the numerical upper and lower bounds you can use \code{\link[tidyr:unnest]{tidyr::unnest()}}.
+extract the numerical upper and lower bounds you can use \code{\link[=unpack_hilo]{unpack_hilo()}}.
 }
 \examples{
 if (requireNamespace("fable", quietly = TRUE)) {

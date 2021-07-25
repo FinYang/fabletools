@@ -12,6 +12,7 @@ features_impl <- function(.tbl, .var, features, ...){
   
   # Compute response
   key_dt <- key_data(.tbl)
+  idx <- index_var(.tbl)
   .tbl <- as_tibble(.tbl)
   if(NCOL(key_dt) > 1){
     .tbl <- dplyr::new_grouped_df(.tbl, key_dt)
@@ -26,15 +27,18 @@ features_impl <- function(.tbl, .var, features, ...){
       fmls <- formals(fn)[-1]
       fn_safe <- safely(fn, tibble(.rows = 1))
       res <- transpose(map(key_dt[[".rows"]], function(i){
+        # Add index to inputs
+        dots$.index <- .tbl[[idx]][i]
+        # Evaluate feature
         out <- do.call(fn_safe, c(list(x[i]), dots[intersect(names(fmls), names(dots))]))
         if(is.null(names(out[["result"]]))) 
-          names(out[["result"]]) <- rep(".?", length(out[["result"]]))
+          names(out[["result"]]) <- paste0("..?", seq_along(out[["result"]]))
         out
       }))
       err <- compact(res[["error"]])
       tbl <- vctrs::vec_rbind(!!!res[["result"]])
       
-      names(tbl)[names(tbl) == ".?"] <- ""
+      names(tbl)[grepl("^\\.\\.?", names(tbl))] <- ""
       if(is.character(nm) && nzchar(nm)){
         names(tbl) <- sprintf("%s%s%s", nm, ifelse(nzchar(names(tbl)), "_", ""), names(tbl))
       }
@@ -73,7 +77,8 @@ features_impl <- function(.tbl, .var, features, ...){
   
   bind_cols(
     key_dt[-NCOL(key_dt)],
-    !!!out
+    !!!out,
+    .name_repair = "minimal"
   )
 }
 
@@ -89,7 +94,7 @@ features_impl <- function(.tbl, .var, features, ...){
 #' @param .var,.vars The variable(s) to compute features on
 #' @param features A list of functions (or lambda expressions) for the features to compute. [`feature_set()`] is a useful helper for building sets of features.
 #' @param .predicate A predicate function (or lambda expression) to be applied to the columns or a logical vector. The variables for which .predicate is or returns TRUE are selected.
-#' @param ... Additional arguments to be passed to each feature. These arguments will only be passed to features which use it in their formal arguments ([`base::formals()`]), and not via their `...`. While passing `na.rm = TRUE` to [`stats::var()`] will work, it will not for [`base::mean()`] as its formals are `x` and `...`. To more precisely pass inputs to each function, you can use lambdas in the list of features (`~ mean(., na.rm = TRUE)`).
+#' @param ... Additional arguments to be passed to each feature. These arguments will only be passed to features which use it in their formal arguments ([`base::formals()`]), and not via their `...`. While passing `na.rm = TRUE` to [`stats::var()`] will work, it will not for [`base::mean()`] as its formals are `x` and `...`. To more precisely pass inputs to each function, you should use lambdas in the list of features (`~ mean(., na.rm = TRUE)`).
 #'
 #' @seealso [`feature_set()`]
 #'
@@ -103,6 +108,11 @@ features_impl <- function(.tbl, .var, features, ...){
 #' if(requireNamespace("feasts")) library(feasts)
 #' tourism %>% 
 #'   features(Trips, features = feature_set(tags = "autocorrelation"))
+#' 
+#' # Best practice is to use anonymous functions for additional arguments
+#' tourism %>% 
+#'   features(Trips, list(~ quantile(., probs=seq(0,1,by=0.2))))
+#'
 #'
 #' @export
 features <- function(.tbl, .var, features, ...){

@@ -1,6 +1,141 @@
-# fabletools 0.2.0
+# fabletools (development version)
+
+## New features
+
+* Added `hypothesize()` generic for running statistical tests on a trained model.
 
 ## Improvements
+
+* The fallback residuals() method now handles transformations when 
+  `type = "innovation"`.
+* Documentation improvements.
+
+## Bug fixes
+
+* Fixed xreg issue in reconciliation methods that partially forecast hierarchy.
+
+# fabletools 0.3.1
+
+## New features
+
+* Added `outliers()` generic for identifying the outliers of a fitted model.
+* Added `special_xreg()` special generator, for producing a model matrix of
+  exogenous regressors. It supports an argument for controlling the default 
+  inclusion of an intercept.
+* Migrated `common_xregs` helper from fable to fabletools for providing a
+  common and consistent interface for common time series exogenous regressors.
+* Added experimental support for passing the tsibble index to `features()`
+  functions if the `.index` argument is used in the function.
+
+## Improvements
+
+* Added transformation support for fallback `fitted(h > 1)` method (#302).
+* Documentation improvements.
+
+# fabletools 0.3.0
+
+## New features
+
+* Added `scenarios()` function for providing multiple scenarios to the 
+  `new_data` argument. This allows different sets of future exogenous regressors
+  to be provided to functions like `forecast()`, `generate()`, and 
+  `interpolate()` (#110).
+* Added `quantile_score()`, which is similar to `percentile_score()` except it
+  allows a set of quantile `probs` to be provided (#280).
+* Added distribution support for `autoplot(<dable>)`. If the decomposition 
+  provides distributions for its components, then the uncertainty of the 
+  components will be plotted with interval ribbons.
+* Added block bootstrap option for bootstrapping innovations in `generate()`.
+* Added multiple step ahead fitted values support via `fitted(<mable>, h > 1)`.
+* Added `as_fable(<forecast>)` for converting older `forecast` class objects to
+  `fable` data structures.
+* Added `top_down(method = "forecast_proportion")` for reconciliation using the
+  forecast proportions techniques.
+* Added `middle_out()` forecast reconciliation method.
+* Added directional accuracy measures, including `MDA()`, `MDV()` and `MDPV()`
+  (#273, @davidtedfordholt).
+* Added `fill_gaps(<fable>)`.
+
+## Improvements
+
+* The `pinball_loss()` and `percentile_score()` accuracy measures are now scaled
+  up by 2x for improved meaning. The loss at 50% equals absolute error and the
+  average loss equals CRPS (#280).
+* Automatic transformation functions formals are now named after the response
+  variable and not converted to `.x`, preventing conflicts with values named `.x`.
+* `box_cox()` and `inv_box_cox()` are now vectorised over the transformation
+  parameter `lambda`.
+* `RMSSE()` accuracy measure is now included in default `accuracy()` measures.
+* Specifying a different `response` variable in `as_fable()` will no longer
+  error, it now sets the provided `response` value as the distribution's new 
+  response.
+* Minor vctrs support improvements.
+
+## Bug fixes
+
+* Data lines in fable `autoplot()` are now always grouped by the data's key.
+* Fixed `bottom_up()` aggregation mismatch for redundant leaf nodes (#266).
+* Fixed `min_trace()` reconciliation for degenerate hierarchies (#267).
+* Fixed `select(<mable>)` not keeping required key variables (#297).
+* Fixed `...` not being passed through in `report()`.
+
+# fabletools 0.2.1
+
+## New features
+
+* Added `bottom_up()` forecast reconciliation method.
+* Added the `skill_score()` accuracy measure modifier.
+* Added `agg_vec()` for manually producing aggregation vectors.
+
+## Improvements
+
+* Fixed some inconsistencies in key ordering of model accessors (such as 
+  `augment()`, `tidy()` and `glance()`) with model methods (such as `forecast()`
+  and `generate()`).
+* Improved equality comparison of `agg_vec` classes, aggregated values will now
+  always match regardless of the value used.
+* Using `summarise()` with a fable will now retain the fable class if the 
+  distribution still exists under the same variable name.
+* Added `as_fable.forecast()` to convert forecast objects from the forecast
+  package to work with fable.
+* Improved `CRPS()` performance when using sampling distributions (#240).
+* Reconciliation now works with hierarchies containing aggregate leaf nodes,
+  allowing unbalanced hierarchies to be reconciled.
+* Produce unique names for unnamed features used with `features()` (#258).
+* Documentation improvements
+* Performance improvements, including using `future.apply()` to parallelize 
+  `forecast()` when the `future` package is attached (#268).
+
+## Breaking changes
+
+* The residuals obtained from the `augment()` function are no longer controlled
+  by the `type` argument. Response residuals (`y - yhat`) are now always found
+  in the `.resid` column, and innovation residuals (the model's error) are now
+  found in the `.innov` column. Response residuals will differ from innovation
+  residuals when transformations are used, and if the model has non-additive
+  residuals.
+* `dist_*()` functions are now removed, and are completely replaced by the 
+  distributional package. These are removed to prevent masking issues when
+  loading packages.
+* `fortify(<fable>)` will now return a tibble with the same structure as the 
+  fable, which is more useful for plotting forecast distributions with the 
+  ggdist package. It can no longer be used to extract intervals from the 
+  forecasts, this can be done using `hilo()`, and numerical values from a 
+  `<hilo>` can be extracted with `unpack_hilo()` or `interval$lower`.
+
+## Bug fixes
+
+* Fixed issue with aggregated date vectors (#230).
+* Fixed display of models in `View()` panel.
+* Fixed issue with combination models not inheriting vctrs functionality (#237).
+* `aggregate_key()` can now be used with non-syntactic variable names.
+* Added tsibble cast methods for fable and dable objects, fixing issues with
+  tidyverse functionality between datasets of different column orders (#247).
+* Fixed `refit()` dropping reconciliation attributes (#251).
+
+# fabletools 0.2.0
+
+## New features
 
 * Distributions are now provided by the distributional package, which is more
   space efficient and allows calculation of distributional statistics including
@@ -9,6 +144,17 @@
   argument, which is a named list of functions that describe the method used to
   obtain the point forecasts. If multiple are specified, each method will be
   identified using the `linetype`.
+* Added accuracy measures: `RMSSE()`, `pinball_loss()`, `scaled_pinball_loss()`.
+* Added accessor functions for column names (or metadata) of interest. This 
+  includes models in a mable (`mable_vars()`), response variables 
+  (`response_vars()`) and distribution variables (`distribution_var()`).
+* Added support for combinations of non-normal forecasts, which produces mean
+  point forecasts only.
+* Added support for reconciling non-normal forecasts, which produces reconciled
+  point forecasts only.
+  
+## Improvements
+
 * Improved dplyr support. You can now use `bind_*()` and `*_join()` operations
   on mables, dables, and fables. More verbs are supported by these extension
   data classes, and so behaviour should work closer to what is expected.
@@ -16,15 +162,12 @@
   decide if, when, and how progress is reported. To show progress, wrap your 
   code in the `progressr::with_progress()` function. Progress will no longer be
   displayed automatically during lengthy calculations.
-* Added accuracy measures: `RMSSE()`, `pinball_loss()`, `scaled_pinball_loss()`.
-* Added accessor functions for column names (or metadata) of interest. This 
-  includes models in a mable (`mable_vars()`), response variables 
-  (`response_vars()`) and distribution variables (`distribution_var()`).
 * Improved support for streaming data to models with transformed response
   variables.
 * `hilo.fbl_ts()` now keeps existing columns of a fable.
 * `forecast()` will now return an empty fable instead of erroring when no
   forecasts are requested.
+* `is_aggregated()` now works for non-aggregated data types.
 * Documentation improvements.
 
 ## Breaking changes
@@ -46,6 +189,10 @@
 * Intervals from multivariate distributions are now returned as data frames of 
   `hilo` intervals. The columns are the response variables. Similar structures 
   are returned when computing other distributional statistics like the `mean`.
+* `hilo` intervals can no longer be unnested as they are now stored more 
+  efficiently as a vctrs record type. The `unpack_hilo()` function will continue
+  to function as expected, and you can now obtain the components of the interval
+  with `x$lower`, `x$upper`, and `x$level`,
 * `rbind()` methods are deprecated in favour of `bind_rows()`
 * The row order of wide to long mable operations (such as `accuracy()`) has 
   changed (due to shift to `pivot_longer()` from `gather()`). Model column name
