@@ -22,8 +22,19 @@ features_impl <- function(.tbl, .var, features, ...){
   names(.resp) <- names(.var)
   
   pb <- progressr::progressor(length(.resp) * length(features) * nrow(key_dt))
+  
   # Compute features
-  com_df <- expand.grid(nm =names(features) %||% seq_along(features),
+  ## create internal function name 
+  ## if there are both unnamed function and named function
+  tem_nm <- names(features) %||% seq_along(features)
+  internal_prefix <- "_"
+  while(any(grepl(sprintf("^%s.*", internal_prefix), tem_nm))) 
+    internal_prefix <- paste0(internal_prefix, internal_prefix)
+  nm_vec <- ifelse(tem_nm == "",
+                   paste0(internal_prefix, seq_along(features)), 
+                   tem_nm
+                   )
+  com_df <- expand.grid(nm = nm_vec,
                         ri = seq_along(.resp), 
                         ii = seq_len(nrow(key_dt)), 
                         KEEP.OUT.ATTRS = FALSE, 
@@ -33,7 +44,7 @@ features_impl <- function(.tbl, .var, features, ...){
     c(as.list(com_df), 
       list(.f = function(nm, ri, ii){
         x <- .resp[[ri]]
-        fn <- features[[match(nm, names(features) %||% seq_along(features))]]
+        fn <- features[[match(nm, nm_vec)]]
         i <- key_dt[[".rows"]][[ii]]
         
         fmls <- formals(fn)[-1]
@@ -67,7 +78,7 @@ features_impl <- function(.tbl, .var, features, ...){
         list(error = err, result = tbl)
       }, 
       z = y, 
-      nm = unique(com_df$nm), 
+      nm =  names(features) %||% seq_along(features), 
       SIMPLIFY = FALSE
       )
       res <- transpose(res)
