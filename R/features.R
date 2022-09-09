@@ -21,33 +21,60 @@ features_impl <- function(.tbl, .var, features, ...){
   .resp <- .resp[seq_along(.var) + NCOL(key_dt) - 1]
   names(.resp) <- names(.var)
   
+  pb <- progressr::progressor(length(.resp) * length(features) * nrow(key_dt))
   # Compute features
-  out <- map(.resp, function(x){
-    res <- imap(features, function(fn, nm){
-      fmls <- formals(fn)[-1]
-      fn_safe <- safely(fn, tibble(.rows = 1))
-      res <- transpose(map(key_dt[[".rows"]], function(i){
+  com_df <- expand.grid(nm = names(features), 
+                        ri = seq_along(.resp), 
+                        ii = seq_len(nrow(key_dt)), 
+                        KEEP.OUT.ATTRS = FALSE, 
+                        stringsAsFactors = FALSE)
+  out_raw <- do.call(
+    mapply_maybe_parallel, 
+    c(as.list(com_df), 
+      list(.f = function(nm, ri, ii){
+        x <- .resp[[ri]]
+        fn <- features[[nm]]
+        i <- key_dt[[".rows"]][[ii]]
+        
+        fmls <- formals(fn)[-1]
+        fn_safe <- safely(fn, tibble(.rows = 1))
         # Add index to inputs
         dots$.index <- .tbl[[idx]][i]
         # Evaluate feature
         out <- do.call(fn_safe, c(list(x[i]), dots[intersect(names(fmls), names(dots))]))
         if(is.null(names(out[["result"]]))) 
           names(out[["result"]]) <- paste0("..?", seq_along(out[["result"]]))
+        pb()
         out
-      }))
-      err <- compact(res[["error"]])
-      tbl <- vctrs::vec_rbind(!!!res[["result"]])
-      
-      names(tbl)[grepl("^\\.\\.?", names(tbl))] <- ""
-      if(is.character(nm) && nzchar(nm)){
-        names(tbl) <- sprintf("%s%s%s", nm, ifelse(nzchar(names(tbl)), "_", ""), names(tbl))
-      }
-      list(error = err, result = tbl)
+      })
+    )
+  )
+  
+  out <- out_raw %>% 
+    split(com_df$ri) %>% 
+    unname() %>% 
+    map(function(y) split(y, com_df$nm)) %>% 
+    map(function(y){
+      res <- mapply(FUN = function(z, nm){
+        res <- transpose(z)
+        err <- compact(res[["error"]])
+        tbl <- vctrs::vec_rbind(!!!res[["result"]])
+        
+        names(tbl)[grepl("^\\.\\.?", names(tbl))] <- ""
+        if(is.character(nm) && nzchar(nm)){
+          names(tbl) <- sprintf("%s%s%s", nm, ifelse(nzchar(names(tbl)), "_", ""), names(tbl))
+        }
+        list(error = err, result = tbl)
+      }, 
+      z = y, 
+      nm = unique(com_df$nm), 
+      SIMPLIFY = FALSE
+      )
+      res <- transpose(res)
+      res[["result"]] <- invoke(bind_cols, res[["result"]])
+      res
     })
-    res <- transpose(res)
-    res[["result"]] <- invoke(bind_cols, res[["result"]])
-    res
-  })
+  
   out <- transpose(out)
   
   # Report errors
@@ -101,7 +128,7 @@ features_impl <- function(.tbl, .var, features, ...){
 #' @examples 
 #' # Provide a set of functions as a named list to features.
 #' library(tsibble)
-#' tourism %>% 
+#' tourism %>%
 #'   features(Trips, features = list(mean = mean, sd = sd))
 #'
 #' # Search and use useful features with `feature_set()`. 
@@ -279,8 +306,8 @@ rd_features_pkg <- function(){
   )
   
   sprintf(
-"See the following help topics for more details about currently available features:\n%s",
-feature_links
+    "See the following help topics for more details about currently available features:\n%s",
+    feature_links
   )
 }
 
