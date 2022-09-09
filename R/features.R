@@ -23,7 +23,7 @@ features_impl <- function(.tbl, .var, features, ...){
   
   pb <- progressr::progressor(length(.resp) * length(features) * nrow(key_dt))
   # Compute features
-  com_df <- expand.grid(nm = names(features), 
+  com_df <- expand.grid(nm =names(features) %||% seq_along(features),
                         ri = seq_along(.resp), 
                         ii = seq_len(nrow(key_dt)), 
                         KEEP.OUT.ATTRS = FALSE, 
@@ -33,7 +33,7 @@ features_impl <- function(.tbl, .var, features, ...){
     c(as.list(com_df), 
       list(.f = function(nm, ri, ii){
         x <- .resp[[ri]]
-        fn <- features[[nm]]
+        fn <- features[[match(nm, names(features) %||% seq_along(features))]]
         i <- key_dt[[".rows"]][[ii]]
         
         fmls <- formals(fn)[-1]
@@ -53,7 +53,7 @@ features_impl <- function(.tbl, .var, features, ...){
   out <- out_raw %>% 
     split(com_df$ri) %>% 
     unname() %>% 
-    map(function(y) split(y, com_df$nm)) %>% 
+    map(function(y) split(y, factor(com_df$nm, levels = unique(com_df$nm)))) %>% 
     map(function(y){
       res <- mapply(FUN = function(z, nm){
         res <- transpose(z)
